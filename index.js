@@ -1,136 +1,172 @@
 const core = require("@actions/core");
 const github = require("@actions/github");
 
-async function run() {
-  try {
-    const orgName = "Marcato-Partners";
-    const projectNumber = "4";
-    // const pullRequestId = core.getInput("PR_ID");
-
-    const myToken = "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";
-    const octokit = github.getOctokit(myToken);
-
-    const projectQuery = `
+async function getAllProjectNextItems(orgName, projectNumber, octokit) {
+  let query = `
     query($org: String!, $number: Int!) {
       organization(login: $org){
         projectNext(number: $number) {
-          id
-          fields(first:20) {
-            nodes {
-              id
-              name
-              settings
-            }
-          }
           items(last: 100) {
             nodes {
               title
               id
+              fieldValues(last: 30) {
+                nodes {
+                  value
+                }
+              }
+              content {
+                ... on Issue{
+                  body
+                }
+              }
             }
+            edges{
+              cursor
+            }
+            totalCount
           }
         }
       }
     }`;
-    const projectResult = await octokit.graphql(projectQuery, {
+  const firstResult = await octokit.graphql(query, {
+    org: orgName,
+    number: parseInt(projectNumber),
+  });
+  const count = firstResult.organization.projectNext.items.totalCount;
+
+  let allProjectNI = [firstResult.organization.projectNext.items.nodes[99]];
+  let lastCursor = firstResult.organization.projectNext.items.edges[99].cursor;
+  const div = Math.floor(count / 100);
+  for (let i = 1; i <= div + 1; i++) {
+    query = `
+      query($org: String!, $number: Int!, $cursor: String!) {
+        organization(login: $org){
+          projectNext(number: $number) {
+            items(last: 100, before: $cursor) {
+              nodes {
+                title
+                id
+                fieldValues(last: 30) {
+                  nodes {
+                    value
+                  }
+                }
+                content {
+                  ... on Issue{
+                    body
+                  }
+                }
+              }
+              edges{
+                cursor
+              }
+              totalCount
+            }
+          }
+        }
+      }`;
+    const tempResult = await octokit.graphql(query, {
       org: orgName,
       number: parseInt(projectNumber),
+      cursor: lastCursor,
     });
 
-    const projectId = projectResult.organization.projectNext.id;
-    const statusFieldId =
-      projectResult.organization.projectNext.fields.nodes.find(
-        (o) => o.name === "Status"
-      ).id;
-    const pullRequestedOptionId = JSON.parse(
-      projectResult.organization.projectNext.fields.nodes.find(
-        (o) => o.name === "Status"
-      ).settings
-    ).options.find((o) => o.name === "In Progress").id;
-    const projectCards = projectResult.organization.projectNext.items.nodes;
+    lastCursor = tempResult.organization.projectNext.items.edges[0].cursor;
+    allProjectNI = allProjectNI.concat(
+      tempResult.organization.projectNext.items.nodes.reverse()
+    );
+  }
+  return allProjectNI;
+}
 
-    // const issuesQuery = `
-    // query($pr: ID!) {
-    //   node(id: $pr) {
-    //     ... on PullRequest {
-    //       timelineItems(itemTypes: [CONNECTED_EVENT, DISCONNECTED_EVENT], first: 100) {
-    //         nodes {
-    //           ... on ConnectedEvent {
-    //             id
-    //             subject {
-    //               ... on Issue {
-    //                 number
-    //                 title
-    //               }
-    //             }
-    //           }
-    //           ... on DisconnectedEvent {
-    //             id
-    //             subject {
-    //               ... on Issue {
-    //                 title
-    //                 number
-    //               }
-    //             }
-    //           }
-    //         }
-    //       }
-    //     }
-    //   }
-    // }`;
+async function getLastRelease(orgName, projectNumber, octokit) {
+  const query = `
+  query($org: String!,  $number: Int!) {
+    organization(login: $org){
+      repositories(first:10) {
+        nodes {
+          name
+          issues(states:OPEN, first:1) {
+            totalCount
+          }
+        }
+      }
+      projectNext(number: $number) {
+        id
+        fields(first:20) {
+          nodes {
+            id
+            name
+            settings
+          }
+        }
+      }
+    }
+  }`;
+  const result = await octokit.graphql(query, {
+    org: orgName,
+    number: parseInt(projectNumber),
+  });
 
-    // const issuesResult = await octokit.graphql(issuesQuery, {
-    //   pr: pullRequestId,
-    // });
+  const releaseField = result.organization.projectNext.fields.nodes.find(
+    (o) => o.name === "Release"
+  );
+  const lastRelease = JSON.parse(releaseField.settings).configuration
+    .iterations[0];
+  return lastRelease;
+}
 
-    // const resource = issuesResult;
-    // const issues = {};
-    // resource.node.timelineItems.nodes.map((node) => {
-    //   if (issues.hasOwnProperty(node.subject.number)) {
-    //     issues[node.subject.number]++;
-    //   } else {
-    //     issues[node.subject.number] = 1;
-    //   }
-    // });
-    // const linkedIssues = [];
-    // for (const [issue, count] of Object.entries(issues)) {
-    //   if (count % 2 !== 0) {
-    //     linkedIssues.push(parseInt(issue));
-    //   }
-    // }
+function getSortedReleaseNotes(allLastReleaseProjectNextItems) {
+  const allLastReleaseIssuesBodies = allLastReleaseProjectNextItems.map(
+    (pni) => pni.content.body
+  );
+  const releaseNotesIssues = allLastReleaseIssuesBodies.filter((body) =>
+    body.toLowerCase().includes("release note")
+  );
 
-    // const linkedIssuesTitles = resource.node.timelineItems.nodes
-    //   .filter((n) => linkedIssues.includes(n.subject.number))
-    //   .map((n) => n.subject.title);
+  const releaseNotes = releaseNotesIssues.map((i) => {
+    const tempString = i.substring(i.toLowerCase().indexOf("release note"));
+    let releaseNotesString = tempString.substring(tempString.indexOf("\n") + 1);
+    let endOfParagraph = releaseNotesString.indexOf("\n");
+    if (endOfParagraph !== -1) {
+      while (endOfParagraph === 1) {
+        releaseNotesString = releaseNotesString.substring(
+          releaseNotesString.indexOf("\n")
+        );
+        endOfParagraph = releaseNotesString.indexOf("\n");
+      }
+    }
+    return tempString;
+  });
 
-    // const projectCardIds = projectCards
-    //   .filter((c) => linkedIssuesTitles.includes(c.title))
-    //   .map((c) => c.id);
-    // for (const projectCardId of projectCardIds) {
-    //   const moveCardQuery = `
-    //   mutation (
-    //     $project: ID!
-    //     $item: ID!
-    //     $status_field: ID!
-    //     $status_value: String!
-    //   ) {
-    //     set_status: updateProjectNextItemField(input: {
-    //       projectId: $project
-    //       itemId: $item
-    //       fieldId: $status_field
-    //       value: $status_value
-    //     }) {
-    //       projectNextItem {
-    //         id
-    //         }
-    //     }
-    //   }`;
-    //   const issuesResult = await octokit.graphql(moveCardQuery, {
-    //     project: projectId,
-    //     item: projectCardId,
-    //     status_field: statusFieldId,
-    //     status_value: pullRequestedOptionId,
-    //   });
-    // }
+  console.log("*************START*************");
+  for (const rn of releaseNotes) {
+    console.log(rn);
+    console.log("***********************************");
+  }
+  console.log("***************FINISH**************");
+}
+
+async function run() {
+  try {
+    const orgName = "Marcato-Partners";
+    const projectNumber = "4";
+
+    const myToken = core.getInput("GITHUB_TOKEN");
+    const octokit = github.getOctokit(myToken);
+
+    const lastRelease = await getLastRelease(orgName, projectNumber, octokit);
+    const allProjectNextItems = await getAllProjectNextItems(
+      orgName,
+      projectNumber,
+      octokit
+    );
+
+    const allLastReleaseProjectNextItems = allProjectNextItems.filter((pni) =>
+      pni.fieldValues.nodes.map((n) => n.value).includes(lastRelease.id)
+    );
+    getSortedReleaseNotes(allLastReleaseProjectNextItems);
   } catch (error) {
     core.setFailed(error.message);
   }

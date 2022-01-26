@@ -1,13 +1,10 @@
-name: "Hello World"
-description: "Greet someone and record the time"
+name: "Collect release notes action"
+description: "Collects release notes from current release"
 inputs:
-  who-to-greet: # id of input
-    description: "Who to greet"
+  GITHUB_TOKEN:
+    description: "Github token"
     required: true
-    default: "World"
-outputs:
-  time: # id of output
-    description: "The time we greeted you"
+    default: "1"
 runs:
   using: "node16"
   main: "index.js"
