@@ -9,5 +9,5 @@ jobs:
       - name: Collect release notes action step
         run: |
           cd ./
-          npm install
+          yarn
           node index.js ${{ secrets.PERSONAL_ACCESS_TOKEN }}
