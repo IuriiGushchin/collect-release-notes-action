@@ -153,7 +153,8 @@ async function run() {
     const orgName = "Marcato-Partners";
     const projectNumber = "4";
 
-    const myToken = process.argv[1];
+    const myToken = process.argv[0];
+    console.log(myToken);
     const octokit = github.getOctokit(myToken);
 
     const lastRelease = await getLastRelease(orgName, projectNumber, octokit);
