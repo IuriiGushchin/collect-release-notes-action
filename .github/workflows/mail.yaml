@@ -7,7 +7,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Collect release notes action step
-        uses: ./
-        id: hello
-        with:
-          GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: |
+          cd ./
+          yarn
+          node index.js ${{ secrets.PERSONAL_ACCESS_TOKEN }}
