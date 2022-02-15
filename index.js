@@ -121,9 +121,13 @@ function getSortedReleaseNotes(allLastReleaseProjectNextItems) {
   const allLastReleaseIssuesBodies = allLastReleaseProjectNextItems.map(
     (pni) => pni.content.body
   );
-  const releaseNotesIssues = allLastReleaseIssuesBodies.filter((body) =>
-    body?.toLowerCase().includes("release note")
-  );
+  const releaseNotesIssues = allLastReleaseIssuesBodies.filter((body) => {
+    if (!body) {
+      return false;
+    } else {
+      return body.toLowerCase().includes("release note");
+    }
+  });
 
   const releaseNotes = releaseNotesIssues.map((i) => {
     const tempString = i.substring(i.toLowerCase().indexOf("release note"));
