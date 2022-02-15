@@ -122,7 +122,7 @@ function getSortedReleaseNotes(allLastReleaseProjectNextItems) {
     (pni) => pni.content.body
   );
   const releaseNotesIssues = allLastReleaseIssuesBodies.filter((body) =>
-    body.toLowerCase().includes("release note")
+    body?.toLowerCase().includes("release note")
   );
 
   const releaseNotes = releaseNotesIssues.map((i) => {
